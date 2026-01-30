@@ -64,6 +64,11 @@ This document tracks the implementation progress of AGI-Android OS.
   - Monitor: `tail -f ~/aosp-sync.log`
   - Location: `~/aosp/`
 
+**Note**: macOS has case-insensitive filesystem which conflicts with AOSP's `build/` and `BUILD`. Either:
+- Build on Linux
+- Use a case-sensitive disk image on macOS
+- Use Docker with Linux
+
 #### Driver Integration
 - [x] Explored driver architecture in `agi-api-driver` branch
 - [x] Understood JSON lines protocol

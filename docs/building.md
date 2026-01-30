@@ -10,10 +10,24 @@ This guide covers setting up the AOSP build environment and building the GSI.
 - **CPU**: Modern multi-core (build times scale linearly with cores)
 
 ### Software Requirements
-- **OS**: Ubuntu 20.04 or 22.04 LTS (recommended), or macOS
+- **OS**: Ubuntu 20.04 or 22.04 LTS (recommended)
 - **Python**: 3.8+
 - **Git**: 2.30+
 - **Java**: OpenJDK 11
+
+### macOS Note
+
+**IMPORTANT**: macOS uses a case-insensitive filesystem by default, which causes issues with AOSP (it has both `build/` directory and `BUILD` symlink). Options:
+
+1. **Recommended**: Build on Linux (native or VM)
+2. Create a case-sensitive disk image:
+   ```bash
+   hdiutil create -type SPARSE -fs 'Case-sensitive APFS' -size 500g -volname aosp ~/aosp.sparseimage
+   hdiutil attach ~/aosp.sparseimage
+   cd /Volumes/aosp
+   # Do all AOSP work here
+   ```
+3. Use Docker with Linux container
 
 ## Step 1: Install Dependencies
 
