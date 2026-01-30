@@ -62,10 +62,7 @@ This document tracks the implementation progress of AGI-Android OS.
 - [x] AOSP repo initialized (android-13.0.0_r83)
 - [x] Case-sensitive disk image created (`~/aosp.sparseimage`)
 - [x] AOSP moved to `/Volumes/aosp` (symlinked from `~/aosp`)
-- [ ] Source sync (~100GB, several hours) - **IN PROGRESS**
-  - Monitor: `du -sh /Volumes/aosp` (currently ~49GB)
-  - Check process: `ps aux | grep "repo sync"`
-  - Location: `/Volumes/aosp/` (via `~/aosp` symlink)
+- [x] Source sync completed - **104GB**
 
 See [docs/macos-setup.md](docs/macos-setup.md) for mounting/unmounting the volume.
 
