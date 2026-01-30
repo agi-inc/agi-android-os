@@ -1,0 +1,609 @@
+# AGI-Android OS Development Journal
+
+## Session: 2026-01-29
+
+### 17:30 - Build Environment Setup
+
+**Goal:** Get AGI-Android OS building and testable in emulator
+
+**Completed:**
+- [x] AOSP source synced (104GB) at `/Volumes/aosp`
+- [x] All AGI-Android OS code written (system service, SDK, AIDL)
+- [x] Build script fixes (nproc, paths, manifests, LICENSE symlinks)
+- [x] macOS SDK 26.1 patch for version check
+- [x] Docker image `agi-aosp-builder` built (1.3GB)
+
+**Blocker Found:**
+- Native macOS build fails due to `_Float16` type in SDK 26.1
+- AOSP's clang doesn't support this newer macOS SDK feature
+- Solution: Use Docker build (Linux environment)
+
+### 18:00 - Starting Docker Build
+
+All prerequisites verified:
+- adb v1.0.41 ✅
+- Android SDK at ~/Library/Android/sdk ✅
+- Emulator with ARM64 AVD ✅
+- Docker can access /Volumes/aosp ✅
+
+**Starting Docker build for ARM64 target...**
+
+```bash
+./tools/docker-build.sh
+# Target: agi_os_arm64-userdebug
+# Started: 2026-01-29 ~18:00 PST
+```
+
+**Issue:** Rosetta error - AOSP has darwin-x86_64 prebuilts that can't run in ARM64 Linux container.
+
+**Fix:**
+- Updated Dockerfile to use `--platform linux/amd64`
+- Runs x86_64 Linux via Rosetta 2 emulation
+- Uses correct linux-x86 prebuilts
+
+**Build FAILED** - Out of Memory
+- Soong analysis phase (100% 397/397) completed
+- `soong_build` analyzing Android.bp was **Killed** (OOM)
+- Docker only has 7.6GB RAM, AOSP needs 16GB+
+
+### ~18:30 - Increased Docker Memory to 20GB
+
+Build attempts with 20GB - all killed during soong_build (uses ~17.5GB).
+
+### Memory Issue Analysis
+
+soong_build analyzing Android.bp requires **~18GB RAM peak**.
+- 24GB system RAM
+- 20GB Docker allocation
+- Still getting OOM killed
+
+**Solution:** Use Modal cloud with 64GB RAM
+
+---
+
+### ~19:00 - Switched to Modal Cloud Build
+
+Created `tools/modal_build.py` - cloud build script using Modal infrastructure:
+- **Sync function**: Downloads AOSP to persistent volume (16GB RAM, 8 CPU, 4hr timeout)
+- **Build function**: Compiles AGI-Android OS (64GB RAM, 16 CPU, 8hr timeout)
+- **Status function**: Check if AOSP is synced
+
+**Modal Environment:** `research-android-os`
+
+**Commands:**
+```bash
+# Check status
+modal run --env research-android-os tools/modal_build.py --action status
+
+# Sync AOSP (first time, ~2 hours)
+modal run --env research-android-os tools/modal_build.py --action sync
+
+# Build AGI-Android OS
+modal run --env research-android-os tools/modal_build.py --action build
+```
+
+### ~19:05 - AOSP Sync Started on Modal
+
+**Status:** ❌ FAILED - Out of disk space
+
+```
+error: Cannot fetch ... (OSError: [Errno 28] No space left on device)
+```
+
+**Issue:** Modal volume ran out of space. AOSP needs ~150GB for full source.
+
+### ~19:30 - Fixed: Created Larger Volume
+
+**Solution:** Created new volume `aosp-source-200gb` with 382GB available.
+
+**Changes to modal_build.py:**
+- Added `--action clean` to wipe volume
+- Added `--partial-clone` and `--clone-filter=blob:limit=10M` for efficient sync
+- Added disk space monitoring in status check
+- Reduced parallel jobs to -j4 to reduce memory pressure
+
+### ~19:35 - AOSP Sync v2 Failed - Inode Limit
+
+**Status:** ❌ FAILED
+
+```
+Volume mounted at /aosp is using 99.9% of available inodes (499475 out of 500000)
+```
+
+**Root Cause:** Modal volumes have a **500,000 inode limit**. AOSP has **millions of files**.
+
+### ~19:50 - New Strategy: Ephemeral Disk Build
+
+Completely rewrote `modal_build.py` to use **ephemeral disk** instead of volume:
+
+**Changes:**
+- Use 500GB ephemeral disk (no inode limit)
+- Sync + build in single run (~6-8 hours total)
+- Only save final artifacts (system.img) to volume
+- Increased resources: 64GB RAM, 32 CPUs, 12hr timeout
+
+**New Commands:**
+```bash
+# Full build (sync + compile in one run)
+modal run --env research-android-os tools/modal_build.py --action fullbuild
+
+# Check/download artifacts
+modal run --env research-android-os tools/modal_build.py --action status
+modal run --env research-android-os tools/modal_build.py --action download
+```
+
+### ~19:55 - Starting Full Build (Attempt 1)
+
+**Status:** ❌ FAILED - Local client disconnected at 69% of make phase
+
+Build was progressing well (soong bootstrap complete, make at 69%) but Modal CLI disconnected.
+
+### ~20:25 - Starting Full Build (Attempt 2 - Detached Mode)
+
+**Status:** 🔄 BUILDING
+
+**App ID:** `ap-Jy9mfqtJCRP4DR981vpUXk`
+
+Using `--detach` flag so build survives client disconnect.
+
+**Resources:**
+- 64GB RAM
+- 32 CPUs
+- 550GB ephemeral disk
+- 12 hour timeout
+
+**Estimated Timeline:**
+- Phase 1 (Sync): ~2 hours
+- Phase 2 (Apply components): ~5 minutes
+- Phase 3 (Build): ~4-6 hours
+- Phase 4 (Save artifacts): ~5 minutes
+
+**Monitor:** https://modal.com/apps/agi-inc/research-android-os/
+
+**Commands:**
+```bash
+# Check app status
+modal app list --env research-android-os
+
+# View logs
+modal app logs ap-Jy9mfqtJCRP4DR981vpUXk --env research-android-os
+
+# Check artifacts when done
+modal run --env research-android-os tools/modal_build.py --action status
+```
+
+**Poll Log:**
+- 20:45 - Running (1 task active)
+- 20:55 - Running (1 task active)
+- 21:05 - Running (1 task active)
+- 21:15 - Running (1 task active) - ~50 min elapsed
+- 21:25 - Running (1 task active) - ~60 min elapsed
+- 21:35 - Running (1 task active) - ~70 min elapsed
+- 21:46 - Running (1 task active) - ~80 min elapsed
+- 21:56 - Running (1 task active) - ~90 min elapsed
+- 22:06 - Running (1 task active) - ~100 min elapsed
+- 22:36 - **STOPPED** - Build failed at 99%
+
+**Failure Analysis:**
+- Build reached 99% (129443/130069)
+- dex2oat timeout after 47 minutes
+- Cross-compilation issue (x86_64 host → ARM target)
+- Error: "dex2oat did not finish after 2850000 milliseconds"
+
+### ~22:40 - Starting Full Build (Attempt 3 - Dex Preopt Disabled)
+
+**Fix:** Added `WITH_DEXPREOPT=false` to avoid dex2oat timeout.
+
+**Trade-off:** First app launch will be slower (JIT compilation instead of AOT).
+
+**App ID:** `ap-HP1zs3DgHZNSfG5HUcPbnx`
+
+**Status:** ❌ FAILED at 96%
+
+**Error:** dex2oat segmentation fault in thread_x86_64.cc
+- WITH_DEXPREOPT=false didn't fully disable boot image generation
+- APEX modules still require dex2oat for art-bootclasspath-fragment
+
+### ~23:40 - Starting Full Build (Attempt 4 - More Aggressive Flags)
+
+Added more flags to disable ALL dex optimization:
+- `DEX_PREOPT_DEFAULT=nostripping`
+- `ART_BUILD_HOST_DEBUG=false`
+- `SKIP_BOOT_JARS_CHECK=true`
+- `WITH_HOST_DALVIK=false`
+
+**Status:** ❌ FAILED at 99% (make phase)
+
+**Error:** Missing host modules (icu_tzdata, tz_version, etc.)
+
+### ~00:00 - Starting Full Build (Attempt 5 - BUILD_BROKEN flag)
+
+Added `BUILD_BROKEN_MISSING_REQUIRED_MODULES := true` to device configs to bypass missing module check.
+
+**Status:** ❌ FAILED - Flag in product config doesn't work
+
+### ~00:20 - Starting Full Build (Attempt 6 - Env Variable)
+
+Added `export BUILD_BROKEN_MISSING_REQUIRED_MODULES=true` to build script environment.
+
+**Status:** ❌ FAILED - Env var doesn't work, needs to be Make variable
+
+### ~00:45 - Starting Full Build (Attempt 7 - Make Variable)
+
+Changed to pass as make variable: `m -j32 BUILD_BROKEN_MISSING_REQUIRED_MODULES=true`
+
+**Status:** ❌ FAILED - Variable not picked up during ckati phase
+
+### ~01:05 - Starting Full Build (Attempt 8 - Proper Device Tree)
+
+Created proper device directory structure:
+- `device/agi/agi_arm64/BoardConfig.mk` with `BUILD_BROKEN_MISSING_REQUIRED_MODULES := true`
+- `device/agi/agi_arm64/device.mk` with product config
+- `device/agi/agi_arm64/AndroidProducts.mk` with lunch combo
+
+**Status:** ❌ FAILED - AOSP synced! But AndroidProducts.mk format wrong
+
+### ~01:26 - Starting Full Build (Attempt 9 - Fixed AndroidProducts.mk)
+
+- Renamed `device.mk` → `agi_os_arm64.mk` to match product name
+- Updated AndroidProducts.mk to reference correct file
+
+**App ID:** `ap-PlTa5F1kpBhzipIMfdqBED`
+
+**Status:** ❌ FAILED - Duplicate product name
+
+**Poll Log:**
+- 01:28 - Running (1 task active) - Phase 1: AOSP sync started
+- 02:01 - **STOPPED** - Build failed at dumpvars phase (~33 min)
+
+**Error:**
+```
+Product name must be unique, "agi_os_arm64" used by
+device/agi/agi_arm64/agi_os_arm64.mk device/agi/os/agi_os_arm64.mk.
+```
+
+**Root Cause:** Both old `device/agi/os/` and new `device/agi/agi_arm64/` were included in tarball.
+
+**Fix:** Removed `device/agi/os/` directory.
+
+### ~02:02 - Starting Full Build (Attempt 10 - Removed Duplicate Product)
+
+- Deleted `device/agi/os/` directory
+- Only `device/agi/agi_arm64/` remains with proper device tree
+
+**App ID:** `ap-rMUjhA2QsEdvazsBVSEhw8`
+
+**Status:** 🔄 BUILDING
+
+**Resources:**
+- 64GB RAM
+- 32 CPUs
+- 550GB ephemeral disk
+- 12 hour timeout
+
+**Estimated Timeline:**
+- Phase 1 (Sync): ~2 hours
+- Phase 2 (Apply components): ~5 minutes
+- Phase 3 (Build): ~4-6 hours
+- Phase 4 (Save artifacts): ~5 minutes
+
+**Monitor:** https://modal.com/apps/agi-inc/research-android-os/
+
+**Poll Log:**
+- 02:02 - Running (1 task active) - Phase 1: AOSP sync started
+- 02:15 - **STOPPED** - Build failed at ckati phase
+
+**Error:**
+```
+device/agi/agi_arm64/agi_os_arm64.mk includes non-existent modules in PRODUCT_HOST_PACKAGES
+Offending entries: icu_tzdata.dat_host_tzdata_apex, tz_version_host_tzdata_apex, etc.
+```
+
+**Root Cause:** `generic_system.mk` requires timezone APEX host modules not available in Modal environment.
+
+**Fix:**
+1. Changed base product from `generic_system.mk` to `aosp_arm64.mk`
+2. Added `PRODUCT_HOST_PACKAGES :=` to clear inherited packages
+
+### ~02:15 - Starting Full Build (Attempt 11 - Fixed Base Product)
+
+- Switched from GSI to standard AOSP ARM64 product
+- Cleared PRODUCT_HOST_PACKAGES to avoid timezone APEX issues
+
+**App ID:** `ap-3QolGqx7vhchohBcQXc22d`
+
+**Status:** 🔄 BUILDING
+
+**Poll Log:**
+- 02:17 - Running (1 task active) - Phase 1: AOSP sync started
+- 02:48 - Running (1 task active) - Build at 34% (52501/152275) - ~33 min elapsed
+- 03:18 - Running (1 task active) - Build at 65% (99305/152275) - ~63 min elapsed
+- 03:49 - Running (1 task active) - Build at 96% (147585/152275) - ~94 min elapsed
+- 04:38 - **STOPPED** - Build failed at 99% (151547/152275)
+
+**Error:**
+```
+dex2oatd F thread_x86_64.cc:67] Check failed: self_check == this
+dex2oat did not finish after 2850000 milliseconds
+art-bootclasspath-fragment dexpreopt failed
+```
+
+**Root Cause:** Cross-compilation dex2oat (x86_64 host → ARM target) fails due to TLS issues in virtualized environment.
+
+**Fix:** Switch to x86_64 target - no cross-compilation needed!
+
+### ~04:40 - Starting Full Build (Attempt 12 - x86_64 Target)
+
+- Created new device tree at `device/agi/agi_x86_64/`
+- Target: `agi_os_x86_64-userdebug`
+- Native x86_64 build avoids all cross-compilation dex2oat issues
+
+**App ID:** `ap-VHnMWQmsPWiD9JkJAbKwUb`
+
+**Status:** 🔄 BUILDING
+
+**Poll Log:**
+- 04:42 - Running (1 task active) - Phase 1: AOSP sync started
+- 05:12 - Running (1 task active) - Build at 33% (51754/153122) - ~30 min elapsed
+- 05:42 - Running (1 task active) - Build at 54% (83020/153122) - ~60 min elapsed
+- 06:12 - Running (1 task active) - Build at 92% (141463/153122) - ~90 min elapsed
+- 07:23 - **STOPPED** - Build failed at 99% (152380/153122) - ~2.75 hrs elapsed
+
+**Error:**
+```
+dex2oatd F thread_x86_64.cc:67] Check failed: self_check == this
+dex2oat did not finish after 2850000 milliseconds
+art-bootclasspath-fragment dexpreopt failed (both x86_64 and x86)
+```
+
+**Root Cause:** dex2oatd crashes in Modal's virtualized environment due to TLS issues.
+- This is NOT a cross-compilation issue
+- Same error for both ARM64 and x86_64 targets
+- Modal's container/VM environment is incompatible with dex2oat's TLS
+
+**Analysis:**
+- 12 build attempts, all fail at art-bootclasspath-fragment step
+- Issue is specific to Modal's infrastructure, not the AOSP code
+- Need alternative build environment
+
+---
+
+## Build Summary
+
+| Attempt | Target | Status | Error |
+|---------|--------|--------|-------|
+| 1-8 | ARM64 | ❌ | Various (OOM, missing modules, product config) |
+| 9-10 | ARM64 | ❌ | Duplicate product name, HOST_PACKAGES |
+| 11 | ARM64 | ❌ | dex2oat crash (TLS) |
+| 12 | x86_64 | ❌ | dex2oat crash (TLS) - same issue |
+| 13 | x86_64 | ❌ | DEXPREOPT required for userdebug |
+| 14 | x86_64 | ❌ | APEX flattening requires boot-image.prof |
+| 15 | x86_64 | ❌ | readonly variable error |
+| 16 | x86_64 | ❌ | boot-image.prof (non-flattened) |
+| 17 | x86_64 | ❌ | same boot-image.prof error |
+| 18 | sdk_phone64 | ❌ | missing timezone APEX modules |
+| 19 | x86_64 | ❌ | same boot-image.prof error |
+
+---
+
+## Conclusion: Modal is NOT viable for AOSP builds
+
+After 19 build attempts with various configurations:
+- ARM64 and x86_64 targets
+- userdebug and eng variants
+- APEX flattening, disabling, and exclusion attempts
+- Various WITH_DEXPREOPT and related flags
+
+**Root cause:** Modal's containerized/virtualized environment has a TLS (Thread Local Storage) incompatibility that causes dex2oat to crash with:
+```
+dex2oatd F thread_x86_64.cc:67] Check failed: self_check == this
+```
+
+This crash occurs regardless of:
+- Target architecture (ARM64, x86_64)
+- Build variant (userdebug, eng)
+- APEX configuration (flattened, normal, disabled)
+
+The ART APEX boot-image.prof generation requires dex2oat to work, and this fails in Modal.
+
+## Recommended Alternative Platforms
+
+1. **GitHub Actions** - Uses real VMs, not containers
+   - Self-hosted runner with 64GB+ RAM
+   - Or GitHub-hosted `ubuntu-latest-8-cores` with careful memory management
+
+2. **AWS EC2**
+   - m6i.4xlarge (16 vCPU, 64GB RAM) ~$0.768/hr
+   - c6i.8xlarge (32 vCPU, 64GB RAM) for faster builds
+
+3. **Google Cloud Build**
+   - e2-highmem-16 (16 vCPU, 128GB RAM)
+
+4. **Local Linux machine** with 64GB+ RAM
+   - The user's Mac has only 24GB RAM (insufficient)
+
+---
+
+## Session: 2026-01-30
+
+### ~07:27 - Starting Full Build (Attempt 13 - APEX Disabled)
+
+**Strategy:** Completely disable APEX and ART boot image generation to bypass dex2oat TLS crashes.
+
+**New Build Flags Added:**
+- `OVERRIDE_TARGET_FLATTEN_APEX=true` - Flatten APEX modules instead of building them
+- `PRODUCT_BUILD_APEX=false` - Skip APEX module builds
+- `DEX_PREOPT_GENERATE_APEX_IMAGE=false` - Skip boot image generation
+- `ART_BUILD_TARGET_DEBUG=false` - Disable ART debug builds
+- `DEXPREOPT_DISABLE=true` - Completely disable dexpreopt
+
+**App ID:** `ap-xXMGjTeXEVu6erYjLviOSb`
+
+**Status:** 🔄 BUILDING
+
+**Poll Log:**
+- 07:27 - Running (1 task active) - Phase 1: AOSP sync started
+- 07:57 - **STOPPED** - Build failed at dumpvars phase
+
+**Error:**
+```
+build/make/core/dex_preopt_config.mk:70: error: DEXPREOPT must be enabled for user and userdebug builds.
+```
+
+**Root Cause:** AOSP requires dexpreopt for userdebug builds. Cannot disable it with flags.
+
+**Fix:** Use `eng` (engineering) variant instead of `userdebug`.
+
+### ~08:00 - Starting Full Build (Attempt 14 - eng variant)
+
+**Strategy:** Build `agi_os_x86_64-eng` instead of `userdebug`. Engineering builds allow disabling dexpreopt.
+
+**App ID:** `ap-ZkuagxQvILsgKnB4SkAL4K`
+
+**Status:** 🔄 BUILDING
+
+**Poll Log:**
+- 08:01 - Running (1 task active) - Phase 1: AOSP sync started
+- ~08:10 - Running - AOSP sync complete, build started
+- ~08:13 - **STOPPED** - Build failed at 3% (5320/149208)
+
+**Error:**
+```
+FAILED: .../com.android.art.debug/.../boot-image.prof
+Boot image profile cannot be generated
+```
+
+**Root Cause:** APEX flattening still requires boot-image.prof generation.
+
+**Fix:** Remove APEX flattening, rely on WITH_DEXPREOPT=false for eng build.
+
+### ~08:25 - Starting Full Build (Attempt 15 - No APEX Flatten)
+
+**Strategy:**
+- Keep `eng` variant which allows disabling dexpreopt
+- Remove `OVERRIDE_TARGET_FLATTEN_APEX=true` to avoid boot-image.prof generation
+- Rely on `WITH_DEXPREOPT=false` to skip dex optimization
+
+**App ID:** `ap-vvuuasWBqsnH7z07jyXcQS`
+
+**Status:** 🔄 BUILDING
+
+**Poll Log:**
+- 08:26 - Running (1 task active) - Phase 1: AOSP sync started
+- 08:33 - **STOPPED** - Build failed at dumpvars (readonly variable)
+
+**Error:**
+```
+cannot assign to readonly variable: PRODUCT_DEX_PREOPT_BOOT_IMAGE_PROFILE_LOCATION
+```
+
+**Fix:** Remove PRODUCT_* variables from BoardConfig.mk (they're readonly)
+
+### ~08:35 - Starting Full Build (Attempt 16 - Minimal Config)
+
+**Strategy:** Minimal BoardConfig.mk - only set variables that are writable.
+
+**App ID:** `ap-4h2K59U6oLsV9MSf4nF0O7`
+
+**Status:** 🔄 BUILDING
+
+**Poll Log:**
+- 08:35 - Running (1 task active) - Phase 1: AOSP sync started
+
+---
+
+## Next Steps Options
+
+1. **Alternative Build Platform:**
+   - GitHub Actions with larger runner (needs setup)
+   - AWS EC2 m6i.4xlarge (16 vCPU, 64GB RAM)
+   - Local Linux machine with 64GB+ RAM
+
+2. **Build Flags to Try:**
+   - `PRODUCT_DEX_PREOPT_NEVER_ALLOW_STRIPPING := true`
+   - Skip art-bootclasspath-fragment entirely (complex)
+   - Use prebuilt ART APEX from Google
+
+3. **Simplified Target:**
+   - Build sdk_phone64_x86_64 instead of custom device
+   - Use existing emulator image as base
+
+---
+
+## Environment Info
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Modal | ✅ | `research-android-os` env, 64GB/16CPU |
+| AOSP Source (Modal) | 🔄 | Syncing to persistent volume |
+| AOSP Source (Local) | ✅ | 104GB at /Volumes/aosp |
+| Docker | ✅ | v28.5.2, image ready (backup) |
+| adb | ✅ | v1.0.41 at /opt/homebrew |
+| Android SDK | ✅ | ~/Library/Android/sdk |
+| Emulator | ✅ | ARM64, has Android 36.1 AVD |
+
+---
+
+## Build Commands
+
+```bash
+# Mount AOSP volume (after reboot)
+hdiutil attach ~/aosp.sparseimage
+
+# Start Docker build (ARM64 target)
+cd ~/Code/agi-android-os
+./tools/docker-build.sh
+
+# Test in emulator (after build)
+./tools/test-emulator.sh
+```
+
+---
+
+## Session: 2026-01-30 (continued)
+
+### ~09:15 - Switching to GitHub Actions
+
+**Context:** After 19 failed Modal build attempts due to dex2oat TLS incompatibility, proceeding autonomously with GitHub Actions as the alternative build platform.
+
+**Created:**
+1. `.github/workflows/build-aosp.yml` - GitHub Actions workflow for building AGI-Android OS
+   - Designed for self-hosted runner with `aosp-builder` label
+   - Supports both x86_64 and ARM64 targets
+   - 12-hour timeout for long builds
+   - Uses ccache for faster incremental builds
+   - Uploads artifacts (system.img, boot.img, etc.)
+
+2. `tools/setup-runner.sh` - Setup script for EC2-based self-hosted runner
+   - Installs all AOSP dependencies
+   - Configures ccache (50GB)
+   - Downloads GitHub Actions runner
+   - Provides step-by-step instructions
+
+**Recommended EC2 Instance:**
+- Type: m6i.4xlarge (16 vCPU, 64GB RAM)
+- Storage: 600GB gp3 EBS
+- AMI: Ubuntu 20.04 LTS
+- Estimated cost: ~$0.77/hour (~$5-6 per build)
+
+**To Start Build:**
+1. Launch EC2 instance with specs above
+2. Run setup script: `curl -sSL .../setup-runner.sh | bash`
+3. Configure GitHub runner with `aosp-builder` label
+4. Trigger workflow from GitHub Actions UI
+
+---
+
+## Next Steps
+
+1. [x] ~~Docker build~~ → Switched to Modal (OOM issues)
+2. [x] Create Modal build script
+3. [x] Start AOSP sync on Modal
+4. [x] ~~Modal builds~~ → Failed (dex2oat TLS incompatibility)
+5. [x] Create GitHub Actions workflow
+6. [x] Create EC2 runner setup script
+7. [ ] Launch EC2 instance and configure runner
+8. [ ] Run GitHub Actions build
+9. [ ] Download system.img
+10. [ ] Test in emulator
+11. [ ] Verify AgentSystemService is running

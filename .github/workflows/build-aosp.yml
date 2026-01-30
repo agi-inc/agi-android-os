@@ -1,0 +1,246 @@
+# AGI-Android OS Build Workflow
+#
+# Builds AGI-Android OS using AOSP Android 13.
+#
+# Requirements:
+#   - Self-hosted runner with 64GB+ RAM, 512GB+ disk
+#   - Ubuntu 20.04 or 22.04
+#   - Label: aosp-builder
+#
+# Setup self-hosted runner on EC2:
+#   1. Launch m6i.4xlarge (16 vCPU, 64GB RAM) with 600GB gp3 storage
+#   2. Use Ubuntu 20.04 AMI
+#   3. Install GitHub Actions runner: https://docs.github.com/en/actions/hosting-your-own-runners
+#   4. Add label: aosp-builder
+#
+# Estimated build time: 6-8 hours (sync: ~2h, build: ~4-6h)
+
+name: Build AGI-Android OS
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Build target'
+        required: true
+        default: 'agi_os_x86_64-eng'
+        type: choice
+        options:
+          - agi_os_x86_64-eng
+          - agi_os_arm64-eng
+      skip_sync:
+        description: 'Skip AOSP sync (use cached source)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AOSP_BRANCH: android-13.0.0_r83
+  AOSP_DIR: /aosp
+  CCACHE_DIR: /ccache
+  USE_CCACHE: 1
+  CCACHE_MAXSIZE: 50G
+
+jobs:
+  build:
+    name: Build ${{ github.event.inputs.target }}
+    runs-on: [self-hosted, aosp-builder]
+    timeout-minutes: 720  # 12 hours max
+
+    steps:
+      - name: Checkout AGI-Android OS
+        uses: actions/checkout@v4
+        with:
+          path: agi-android-os
+
+      - name: System Info
+        run: |
+          echo "=== System Info ==="
+          uname -a
+          cat /etc/os-release
+          echo ""
+          echo "=== CPU ==="
+          nproc
+          lscpu | head -20
+          echo ""
+          echo "=== Memory ==="
+          free -h
+          echo ""
+          echo "=== Disk ==="
+          df -h
+          echo ""
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            git-core gnupg flex bison build-essential zip curl \
+            zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+            libncurses5 lib32ncurses5-dev x11proto-core-dev libx11-dev \
+            lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip \
+            fontconfig openjdk-11-jdk rsync bc ccache lz4 wget pv \
+            python3 python3-pip
+
+          # Install repo tool
+          sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+
+          # Configure git
+          git config --global user.email "build@agi.inc"
+          git config --global user.name "AGI Builder"
+          git config --global color.ui false
+
+      - name: Setup AOSP Directory
+        run: |
+          sudo mkdir -p ${{ env.AOSP_DIR }}
+          sudo chown -R $USER:$USER ${{ env.AOSP_DIR }}
+          sudo mkdir -p ${{ env.CCACHE_DIR }}
+          sudo chown -R $USER:$USER ${{ env.CCACHE_DIR }}
+
+      - name: Sync AOSP Source
+        if: ${{ github.event.inputs.skip_sync != 'true' }}
+        working-directory: ${{ env.AOSP_DIR }}
+        run: |
+          echo "=== Phase 1: Syncing AOSP ${{ env.AOSP_BRANCH }} ==="
+
+          # Initialize repo
+          if [ ! -d ".repo" ]; then
+            repo init \
+              -u https://android.googlesource.com/platform/manifest \
+              -b ${{ env.AOSP_BRANCH }} \
+              --depth=1
+          fi
+
+          # Sync with retries
+          for i in 1 2 3; do
+            echo "Sync attempt $i..."
+            repo sync -j$(nproc) -c --no-tags --no-clone-bundle --optimized-fetch && break
+            echo "Sync failed, retrying..."
+            sleep 30
+          done
+
+          # Verify sync
+          if [ ! -f "build/envsetup.sh" ]; then
+            echo "ERROR: AOSP sync failed - build/envsetup.sh not found"
+            exit 1
+          fi
+
+          echo "AOSP sync complete!"
+          df -h
+
+      - name: Apply AGI Components
+        working-directory: ${{ env.AOSP_DIR }}
+        run: |
+          echo "=== Phase 2: Applying AGI Components ==="
+
+          # Copy device configuration
+          echo "Copying device config..."
+          mkdir -p device/agi
+          cp -r $GITHUB_WORKSPACE/agi-android-os/aosp/device/agi/* device/agi/
+
+          # Copy AgentSystemService
+          echo "Copying AgentSystemService..."
+          mkdir -p packages/services
+          cp -r $GITHUB_WORKSPACE/agi-android-os/system-service packages/services/AgentService
+
+          # Copy AGI-OS SDK
+          echo "Copying AGI-OS SDK..."
+          mkdir -p frameworks
+          cp -r $GITHUB_WORKSPACE/agi-android-os/sdk frameworks/AgentSDK
+
+          # Copy AIDL interfaces
+          if [ -d "$GITHUB_WORKSPACE/agi-android-os/aidl" ]; then
+            echo "Copying AIDL interfaces..."
+            cp -r $GITHUB_WORKSPACE/agi-android-os/aidl/* packages/services/AgentService/
+            cp -r $GITHUB_WORKSPACE/agi-android-os/aidl/* frameworks/AgentSDK/
+          fi
+
+          # Fix LICENSE files (common AOSP issue)
+          echo "Fixing LICENSE files..."
+          for path in "external/kotlinx.coroutines:LICENSE.txt" "external/kotlinc:license/LICENSE.txt"; do
+            dir="${path%%:*}"
+            src="${path##*:}"
+            if [ -f "$dir/$src" ] && [ ! -f "$dir/LICENSE" ]; then
+              cp "$dir/$src" "$dir/LICENSE"
+              echo "  Fixed $dir/LICENSE"
+            fi
+          done
+
+          # List what we have
+          echo "Device configs:"
+          find device/agi -name "*.mk" | head -20
+
+          echo "AGI components applied!"
+
+      - name: Build AGI-Android OS
+        working-directory: ${{ env.AOSP_DIR }}
+        run: |
+          echo "=== Phase 3: Building ${{ github.event.inputs.target }} ==="
+
+          # Source build environment
+          source build/envsetup.sh
+
+          # Select target
+          lunch ${{ github.event.inputs.target }}
+
+          # Configure for eng build (allows disabling dexpreopt)
+          export WITH_DEXPREOPT=false
+          export DONT_DEXPREOPT_PREBUILTS=true
+          export ART_BUILD_HOST_DEBUG=false
+          export SKIP_BOOT_JARS_CHECK=true
+
+          # Build
+          echo "Starting build with $(nproc) cores..."
+          m -j$(nproc) BUILD_BROKEN_MISSING_REQUIRED_MODULES=true
+
+          echo "Build complete!"
+          df -h
+
+      - name: Collect Artifacts
+        working-directory: ${{ env.AOSP_DIR }}
+        run: |
+          echo "=== Phase 4: Collecting Artifacts ==="
+
+          # Find output directory
+          OUT_DIR=$(find out/target/product -maxdepth 1 -type d -name "agi_*" | head -1)
+
+          if [ -z "$OUT_DIR" ]; then
+            echo "ERROR: No output directory found"
+            find out/target/product -maxdepth 2 -name "*.img" 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Output directory: $OUT_DIR"
+
+          # Create artifacts directory
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+
+          # Copy key images
+          for img in system.img vbmeta.img boot.img vendor.img userdata.img; do
+            if [ -f "$OUT_DIR/$img" ]; then
+              echo "Copying $img..."
+              cp "$OUT_DIR/$img" $GITHUB_WORKSPACE/artifacts/
+            fi
+          done
+
+          # List artifacts
+          ls -lh $GITHUB_WORKSPACE/artifacts/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agi-android-os-${{ github.event.inputs.target }}
+          path: artifacts/
+          retention-days: 30
+
+      - name: Build Summary
+        run: |
+          echo "## Build Complete! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** ${{ github.event.inputs.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "**AOSP Branch:** ${{ env.AOSP_BRANCH }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh $GITHUB_WORKSPACE/artifacts/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
