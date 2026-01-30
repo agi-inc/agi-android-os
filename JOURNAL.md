@@ -656,3 +656,85 @@ Alternative approaches (Magisk/Xposed injection) not viable for this use case - 
 3. Local Mac has only 24GB RAM (soong_build needs ~18GB peak + other processes)
 
 **Poll scheduled:** Next check at ~10:30
+
+### ~10:15 - Code Review Complete
+
+**Verified all AGI components are complete:**
+
+1. **AgentSystemService** (`system-service/`)
+   - `AgentSystemService.kt` - SystemService implementation ✅
+   - `SessionBinder.kt` - IPC wrapper ✅
+   - `SessionManager.kt` - Session lifecycle ✅
+   - `Session.kt` - Session state ✅
+   - `VirtualDisplayManager.kt` - Display creation ✅
+   - `ScreenCapturer.kt` - Screenshot support ✅
+   - `InputInjector.kt` - Touch/key injection ✅
+   - `SystemExecutor.kt` - Shell execution ✅
+
+2. **AGI-OS SDK** (`sdk/`)
+   - `AgentOS.kt` - Main entry point, singleton pattern ✅
+   - `Session.kt` - Public interface with full documentation ✅
+   - `SessionImpl.kt` - AIDL binding implementation ✅
+
+3. **AIDL Interfaces** (`aidl/`)
+   - `IAgentService.aidl` - Service interface ✅
+   - `IAgentSession.aidl` - Session interface ✅
+   - `SessionConfig.aidl` - Config parcelable ✅
+
+4. **Device Configs** (`aosp/device/agi/`)
+   - `agi_x86_64/` - For emulator testing ✅
+   - `agi_arm64/` - For physical devices ✅
+
+**Created EC2 Build Scripts:**
+- `tools/launch-ec2-builder.sh` - Launch configured EC2 instance
+- `tools/build-on-ec2.sh` - Automated build script
+
+**Commits:**
+```
+ee3ff7e feat: add EC2 build automation scripts
+3c9b9eb chore: clean up device configs and add Docker build support
+3b4c57e feat: add GitHub Actions build workflow and EC2 runner setup
+```
+
+---
+
+## Action Required (User)
+
+To proceed with the build, the user needs to:
+
+### Option A: EC2 Build (Recommended)
+```bash
+# 1. Refresh AWS credentials
+aws sso login --profile sso
+
+# 2. Launch EC2 builder (m6i.4xlarge, 64GB RAM, 600GB disk)
+./tools/launch-ec2-builder.sh
+
+# 3. SSH to instance and run build
+ssh -i ~/.ssh/aosp-builder.pem ubuntu@<IP>
+git clone https://github.com/agi-inc/agi-android-os.git
+./agi-android-os/tools/build-on-ec2.sh
+
+# Estimated: $5-6 for full build (~7 hours)
+```
+
+### Option B: GitHub Actions
+```bash
+# 1. Create GitHub repo
+gh repo create agi-inc/agi-android-os --private
+
+# 2. Push code
+git remote add origin https://github.com/agi-inc/agi-android-os.git
+git push -u origin main
+
+# 3. Set up self-hosted runner on EC2
+# 4. Trigger workflow from GitHub Actions UI
+```
+
+---
+
+## Autonomous Polling Status
+
+- **Last check:** 2026-01-30 ~10:15
+- **Status:** Blocked on user action (AWS login or GitHub setup)
+- **Next autonomous action:** Poll again at ~10:45
