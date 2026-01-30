@@ -1,0 +1,42 @@
+From: AGI <noreply@agi.dev>
+Subject: [PATCH] Add AgentSystemService to system_server
+
+Register AgentSystemService in SystemServer to enable virtual display
+automation and system-level control.
+
+---
+ services/java/com/android/server/SystemServer.java | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/services/java/com/android/server/SystemServer.java b/services/java/com/android/server/SystemServer.java
+index 1234567..abcdefg 100644
+--- a/services/java/com/android/server/SystemServer.java
++++ b/services/java/com/android/server/SystemServer.java
+@@ -123,6 +123,9 @@ import com.android.server.wm.WindowManagerService;
+ import dalvik.system.VMRuntime;
+ import java.util.Timer;
+
++// AGI-Android OS
++import com.agi.os.service.AgentSystemService;
++
+ public final class SystemServer implements Dumpable {
+     private static final String TAG = "SystemServer";
+
+@@ -1892,6 +1895,15 @@ public final class SystemServer implements Dumpable {
+             mSystemServiceManager.startService(MediaRouterService.class);
+             t.traceEnd();
+
++            // AGI-Android OS: Start AgentSystemService
++            t.traceBegin("StartAgentSystemService");
++            try {
++                mSystemServiceManager.startService(AgentSystemService.class);
++            } catch (Throwable e) {
++                reportWtf("starting AgentSystemService", e);
++            }
++            t.traceEnd();
++
+             if (!isWatch) {
+                 t.traceBegin("StartMmsService");
+                 mmsService = mSystemServiceManager.startService(MmsServiceBroker.class);
+--
+2.39.0

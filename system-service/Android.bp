@@ -1,0 +1,23 @@
+// Build configuration for AgentSystemService
+// This service runs in system_server with full system privileges
+
+android_library {
+    name: "services.agent",
+    srcs: [
+        "src/**/*.kt",
+        "src/**/*.java",
+    ],
+    libs: [
+        "services.core",
+        "framework",
+        "framework-annotations-lib",
+    ],
+    static_libs: [
+        "agi-os-aidl",
+        "kotlinx-coroutines-android",
+    ],
+    kotlincflags: [
+        "-Xjvm-default=all",
+    ],
+    platform_apis: true,
+}

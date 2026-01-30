@@ -1,0 +1,33 @@
+// Build configuration for AGI-OS SDK
+// Client library for apps to interact with AgentSystemService
+
+android_library {
+    name: "agi-os-sdk",
+    srcs: [
+        "src/**/*.kt",
+        "src/**/*.java",
+    ],
+    static_libs: [
+        "agi-os-aidl",
+    ],
+    sdk_version: "current",
+    min_sdk_version: "33",
+}
+
+// AIDL library (shared between service and SDK)
+java_library {
+    name: "agi-os-aidl",
+    srcs: [
+        ":agi-os-aidl-sources",
+    ],
+    sdk_version: "current",
+}
+
+filegroup {
+    name: "agi-os-aidl-sources",
+    srcs: [
+        "../aidl/**/*.aidl",
+        "../aidl/**/*.kt",
+    ],
+    path: "../aidl",
+}
