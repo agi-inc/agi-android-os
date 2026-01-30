@@ -102,6 +102,7 @@ This project creates a modified Android 13 (API 33) GSI with a built-in `AgentSy
 | [docs/big-picture.md](docs/big-picture.md) | Vision, architecture overview, and key concepts |
 | [docs/architecture.md](docs/architecture.md) | Detailed technical architecture |
 | [docs/driver-integration.md](docs/driver-integration.md) | How the agi-driver binary integrates |
+| [docs/macos-setup.md](docs/macos-setup.md) | macOS development setup (case-sensitive volume) |
 | [docs/building.md](docs/building.md) | Build environment setup |
 | [docs/flashing.md](docs/flashing.md) | How to flash GSI to devices |
 | [docs/sdk-api.md](docs/sdk-api.md) | SDK API reference |
@@ -240,9 +241,17 @@ This builds a GSI (Generic System Image) compatible with any device supporting P
 
 ## Current Status
 
-**AOSP sync in progress.** Monitor with:
+**AOSP sync in progress** on case-sensitive volume.
+
 ```bash
-tail -f ~/aosp-sync.log
+# Check sync progress
+du -sh /Volumes/aosp
+
+# Check if sync is running
+ps aux | grep "repo sync"
+
+# Mount volume after reboot
+hdiutil attach ~/aosp.sparseimage
 ```
 
 See [PROGRESS.md](PROGRESS.md) for detailed status.

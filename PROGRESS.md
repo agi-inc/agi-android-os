@@ -60,14 +60,14 @@ This document tracks the implementation progress of AGI-Android OS.
 #### AOSP Source Sync
 - [x] Repo tool installed
 - [x] AOSP repo initialized (android-13.0.0_r83)
-- [ ] Source sync (~100GB, several hours)
-  - Monitor: `tail -f ~/aosp-sync.log`
-  - Location: `~/aosp/`
+- [x] Case-sensitive disk image created (`~/aosp.sparseimage`)
+- [x] AOSP moved to `/Volumes/aosp` (symlinked from `~/aosp`)
+- [ ] Source sync (~100GB, several hours) - **IN PROGRESS**
+  - Monitor: `du -sh /Volumes/aosp` (currently ~49GB)
+  - Check process: `ps aux | grep "repo sync"`
+  - Location: `/Volumes/aosp/` (via `~/aosp` symlink)
 
-**Note**: macOS has case-insensitive filesystem which conflicts with AOSP's `build/` and `BUILD`. Either:
-- Build on Linux
-- Use a case-sensitive disk image on macOS
-- Use Docker with Linux
+See [docs/macos-setup.md](docs/macos-setup.md) for mounting/unmounting the volume.
 
 #### Driver Integration
 - [x] Explored driver architecture in `agi-api-driver` branch
