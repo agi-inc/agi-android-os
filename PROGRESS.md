@@ -2,9 +2,25 @@
 
 This document tracks the implementation progress of AGI-Android OS.
 
-## Current Status: Ready to Build
+## Current Status: Build Environment Issue
 
-**AOSP source synced (104GB). Ready to apply patches and build.**
+**AOSP source synced (104GB). macOS SDK 26.1 (Sequoia) is incompatible with AOSP Android 13.**
+
+### macOS Build Issue
+
+AOSP Android 13's build system doesn't support macOS SDK 26.1 (`_Float16` type errors in math.h).
+
+**Solution: Use Docker build** (recommended):
+```bash
+# Build using Docker (Linux environment)
+./tools/docker-build.sh
+
+# Or use a cloud build service / Linux VM
+```
+
+**Alternative: Install older macOS SDK**
+- Download macOS SDK 11 or 12 from Apple Developer
+- Set `SDKROOT` environment variable
 
 ### Completed ✅
 
@@ -44,10 +60,16 @@ This document tracks the implementation progress of AGI-Android OS.
 
 #### Tools (`tools/`)
 - [x] `setup-build-env.sh` - Build environment setup
-- [x] `build.sh` - Build script
+- [x] `build.sh` - Build script (native macOS - requires SDK 11/12)
+- [x] `docker-build.sh` - Build script (Docker/Linux - recommended)
+- [x] `Dockerfile` - AOSP builder Docker image
 - [x] `flash.sh` - Flashing script
 - [x] `test-emulator.sh` - Emulator testing
 - [x] `agi-cli.sh` - Shell CLI tool
+
+#### Build Patches (`aosp/patches/`)
+- [x] `frameworks_base/0001-add-agent-system-service.patch` - Register AgentSystemService
+- [x] `build_soong/0001-support-newer-macos-sdk-versions.patch` - Add macOS SDK 13-26 support
 
 #### Documentation (`docs/`)
 - [x] `README.md` - Project overview
@@ -174,16 +196,17 @@ The legacy approach using accessibility services. This OS replaces that approach
 # Mount AOSP volume (after reboot)
 hdiutil attach ~/aosp.sparseimage
 
-# Build
-cd ~/aosp
-source build/envsetup.sh
-lunch agi_os_x86_64-userdebug  # for emulator
+# Build using Docker (RECOMMENDED for macOS Sequoia+)
+cd ~/Code/agi-android-os
+./tools/docker-build.sh
+
+# Build natively (requires macOS SDK 11 or 12)
+TARGET=agi_os_x86_64-userdebug ./tools/build.sh  # for emulator
 # OR
-lunch agi_os_arm64-userdebug   # for real device
-m -j$(sysctl -n hw.ncpu)
+TARGET=agi_os_arm64-userdebug ./tools/build.sh   # for real device
 
 # Test in emulator
-cd ~/Code/agi-android-os && ./tools/test-emulator.sh
+./tools/test-emulator.sh
 
 # Check if AgentSystemService is running (after boot)
 adb shell service list | grep agent
@@ -194,11 +217,16 @@ find ~/Code/agi-android-os -name "*.kt" -o -name "*.aidl" | head -20
 
 ## Resuming This Work
 
-**Current state: AOSP synced (104GB), ready to build.**
+**Current state: AOSP synced (104GB). macOS SDK incompatibility requires Docker build.**
 
 1. Mount volume if needed: `hdiutil attach ~/aosp.sparseimage`
-2. Apply patches: `~/Code/agi-android-os/tools/build.sh`
-3. Or manually apply and build (see Phase 2 steps above)
+2. Build using Docker: `./tools/docker-build.sh`
+3. Alternative: Use a Linux VM or cloud build service
+
+### Known Issues
+
+1. **macOS SDK 26.1 incompatibility**: AOSP Android 13 doesn't support `_Float16` type in newer macOS SDKs. Use Docker build instead.
+2. **Missing LICENSE files**: Some AOSP modules missing LICENSE files. Symlinks created during build.
 
 ## File Locations
 

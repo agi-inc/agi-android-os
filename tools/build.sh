@@ -15,7 +15,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 AOSP_DIR="${AOSP_DIR:-$HOME/aosp}"
 TARGET="${TARGET:-agi_os_arm64-userdebug}"
-JOBS="${JOBS:-$(nproc)}"
+# Get CPU count (macOS uses sysctl, Linux uses nproc)
+if [[ "$(uname)" == "Darwin" ]]; then
+    JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
+else
+    JOBS="${JOBS:-$(nproc)}"
+fi
 
 echo "=== AGI-Android OS Build ==="
 echo "AOSP directory: $AOSP_DIR"
@@ -35,29 +40,45 @@ echo "Applying AGI components to AOSP..."
 
 # Copy device configuration
 echo "  - Device configuration"
+rm -rf "$AOSP_DIR/device/agi/os"
 mkdir -p "$AOSP_DIR/device/agi"
 cp -r "$REPO_DIR/aosp/device/agi/os" "$AOSP_DIR/device/agi/"
 
 # Copy system service
 echo "  - AgentSystemService"
+rm -rf "$AOSP_DIR/packages/services/AgentService"
 mkdir -p "$AOSP_DIR/packages/services"
 cp -r "$REPO_DIR/system-service" "$AOSP_DIR/packages/services/AgentService"
 
 # Copy SDK
 echo "  - AGI-OS SDK"
+rm -rf "$AOSP_DIR/frameworks/AgentSDK"
 mkdir -p "$AOSP_DIR/frameworks"
 cp -r "$REPO_DIR/sdk" "$AOSP_DIR/frameworks/AgentSDK"
+# Copy AIDL files alongside SDK for local reference
+cp -r "$REPO_DIR/aidl" "$AOSP_DIR/frameworks/AgentSDK/"
 
-# Copy AIDL
+# Copy AIDL to system service too
 echo "  - AIDL definitions"
-mkdir -p "$AOSP_DIR/frameworks/base/core/java/com/agi"
-cp -r "$REPO_DIR/aidl/com/agi/os" "$AOSP_DIR/frameworks/base/core/java/com/agi/"
+cp -r "$REPO_DIR/aidl" "$AOSP_DIR/packages/services/AgentService/"
 
 # Apply framework patches (if any)
 if [[ -d "$REPO_DIR/aosp/patches/frameworks_base" ]]; then
     echo "  - Framework patches"
     cd "$AOSP_DIR/frameworks/base"
     for patch in "$REPO_DIR/aosp/patches/frameworks_base"/*.patch; do
+        if [[ -f "$patch" ]]; then
+            echo "    Applying: $(basename "$patch")"
+            git apply "$patch" 2>/dev/null || echo "    (already applied or conflict)"
+        fi
+    done
+fi
+
+# Apply build/soong patches (macOS SDK version support)
+if [[ -d "$REPO_DIR/aosp/patches/build_soong" ]]; then
+    echo "  - Build system patches"
+    cd "$AOSP_DIR/build/soong"
+    for patch in "$REPO_DIR/aosp/patches/build_soong"/*.patch; do
         if [[ -f "$patch" ]]; then
             echo "    Applying: $(basename "$patch")"
             git apply "$patch" 2>/dev/null || echo "    (already applied or conflict)"

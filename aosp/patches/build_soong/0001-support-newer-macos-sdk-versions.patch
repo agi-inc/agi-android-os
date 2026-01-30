@@ -1,0 +1,15 @@
+diff --git a/cc/config/darwin_host.go b/cc/config/darwin_host.go
+index 5e3f7c7..abe65c4 100644
+--- a/cc/config/darwin_host.go
++++ b/cc/config/darwin_host.go
+@@ -55,6 +55,10 @@ var (
+ 	darwinSupportedSdkVersions = []string{
+ 		"11",
+ 		"12",
++		"13",
++		"14",
++		"15",
++		"26",
+ 	}
+ 
+ 	darwinAvailableLibraries = append(
