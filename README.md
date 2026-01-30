@@ -241,20 +241,20 @@ This builds a GSI (Generic System Image) compatible with any device supporting P
 
 ## Current Status
 
-**AOSP sync in progress** on case-sensitive volume.
+**Ready to build.** AOSP synced (104GB) on case-sensitive volume.
 
 ```bash
-# Check sync progress
-du -sh /Volumes/aosp
-
-# Check if sync is running
-ps aux | grep "repo sync"
-
 # Mount volume after reboot
 hdiutil attach ~/aosp.sparseimage
+
+# Apply AGI-Android OS and build
+./tools/build.sh
+
+# Or test in emulator after build
+./tools/test-emulator.sh
 ```
 
-See [PROGRESS.md](PROGRESS.md) for detailed status.
+See [PROGRESS.md](PROGRESS.md) for detailed status and next steps.
 
 ## License
 

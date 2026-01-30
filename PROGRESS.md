@@ -2,7 +2,9 @@
 
 This document tracks the implementation progress of AGI-Android OS.
 
-## Current Status: Phase 1 - Foundation
+## Current Status: Ready to Build
+
+**AOSP source synced (104GB). Ready to apply patches and build.**
 
 ### Completed ✅
 
@@ -54,29 +56,42 @@ This document tracks the implementation progress of AGI-Android OS.
 - [x] `flashing.md` - Flashing guide
 - [x] `sdk-api.md` - SDK reference
 - [x] `big-picture.md` - Vision and overview
+- [x] `driver-integration.md` - Driver binary integration
+- [x] `macos-setup.md` - Case-sensitive volume setup
 
-### In Progress ⏳
+#### macOS Development Environment
+- [x] Case-sensitive disk image created (`~/aosp.sparseimage`, 500GB sparse)
+- [x] Mounted at `/Volumes/aosp`
+- [x] Symlinked from `~/aosp`
+- [x] AOSP source synced (android-13.0.0_r83) - **104GB**
 
-#### AOSP Source Sync
-- [x] Repo tool installed
-- [x] AOSP repo initialized (android-13.0.0_r83)
-- [x] Case-sensitive disk image created (`~/aosp.sparseimage`)
-- [x] AOSP moved to `/Volumes/aosp` (symlinked from `~/aosp`)
-- [x] Source sync completed - **104GB**
+#### Driver Research
+- [x] Explored `agi-api-driver` (jacob/agent-driver-module branch)
+- [x] Understood JSON lines protocol (stdin/stdout)
+- [x] Documented in `docs/driver-integration.md`
 
-See [docs/macos-setup.md](docs/macos-setup.md) for mounting/unmounting the volume.
+### Next Steps 📋
 
-#### Driver Integration
-- [x] Explored driver architecture in `agi-api-driver` branch
-- [x] Understood JSON lines protocol
-- [ ] Add Android ARM64 build target to driver workflow
-- [ ] Create driver bridge in system service
-- [ ] Test driver binary on Android
+#### Phase 2: Build & Test (READY TO START)
+```bash
+# Apply AGI-Android OS to AOSP
+cd ~/Code/agi-android-os
+./tools/build.sh
 
-### TODO 📋
+# Or manually:
+cd ~/aosp
+cp -r ~/Code/agi-android-os/aosp/device/agi device/
+cp -r ~/Code/agi-android-os/system-service packages/services/AgentService
+cp -r ~/Code/agi-android-os/sdk frameworks/AgentSDK
+cp -r ~/Code/agi-android-os/aidl/com/agi frameworks/base/core/java/com/
+cd frameworks/base && git apply ~/Code/agi-android-os/aosp/patches/frameworks_base/*.patch
 
-#### Phase 2: Build & Test
-- [ ] Wait for AOSP sync to complete
+# Build for emulator first
+source build/envsetup.sh
+lunch agi_os_x86_64-userdebug
+m -j$(sysctl -n hw.ncpu)
+```
+
 - [ ] Apply patches to AOSP source
 - [ ] Build x86_64 for emulator testing
 - [ ] Test AgentSystemService startup
@@ -85,7 +100,7 @@ See [docs/macos-setup.md](docs/macos-setup.md) for mounting/unmounting the volum
 - [ ] Test screenshot capture
 
 #### Phase 3: Driver Integration
-- [ ] Add `linux-arm64` target to driver build workflow
+- [ ] Add `linux-arm64` target to driver build workflow in `agi-api-driver`
 - [ ] Build driver for Android
 - [ ] Include driver binary in system image
 - [ ] Create `DriverBridge.kt` in system service
@@ -132,12 +147,21 @@ Using Android's `VirtualDisplay` + `ImageReader` because:
 
 ### agi-api-driver (jacob/agent-driver-module branch)
 The driver binary lives here. Key files:
-- `src/agi_driver/` - Driver source
+- `src/agi_driver/` - Driver source (Python, compiled with Nuitka)
 - `src/agi_driver/README.md` - Protocol documentation
 - `.github/workflows/build-agi-driver.yml` - Build workflow
 
+**Driver Protocol** (JSON lines over stdin/stdout):
+```jsonl
+← {"event":"ready","version":"0.1.0","step":0}
+→ {"command":"start","goal":"...","screenshot":"base64...","screen_width":1080,"screen_height":1920}
+← {"event":"action","action":{"type":"click","x":500,"y":750},"step":1}
+→ {"command":"screenshot","data":"base64..."}
+← {"event":"finished","success":true,"summary":"Done","step":10}
+```
+
 To add Android support, need to:
-1. Add `linux-arm64` target to build matrix
+1. Add `linux-arm64` target to build matrix in `.github/workflows/build-agi-driver.yml`
 2. Install ARM64 cross-compiler in workflow
 3. Build with Nuitka for ARM64
 
@@ -147,35 +171,41 @@ The legacy approach using accessibility services. This OS replaces that approach
 ## Commands Reference
 
 ```bash
-# Monitor AOSP sync
-tail -f ~/aosp-sync.log
+# Mount AOSP volume (after reboot)
+hdiutil attach ~/aosp.sparseimage
 
-# Check driver branch
-cd ~/Code/agi-api-driver && git status
-
-# Build after sync completes
-cd ~/Code/agi-android-os && ./tools/build.sh
+# Build
+cd ~/aosp
+source build/envsetup.sh
+lunch agi_os_x86_64-userdebug  # for emulator
+# OR
+lunch agi_os_arm64-userdebug   # for real device
+m -j$(sysctl -n hw.ncpu)
 
 # Test in emulator
-./tools/test-emulator.sh
+cd ~/Code/agi-android-os && ./tools/test-emulator.sh
+
+# Check if AgentSystemService is running (after boot)
+adb shell service list | grep agent
 
 # View project structure
-tree -L 2 ~/Code/agi-android-os
+find ~/Code/agi-android-os -name "*.kt" -o -name "*.aidl" | head -20
 ```
 
 ## Resuming This Work
 
-To resume this conversation/work:
+**Current state: AOSP synced (104GB), ready to build.**
 
-1. Check AOSP sync status: `tail ~/aosp-sync.log`
-2. Review this document for current state
-3. Check `docs/big-picture.md` for architecture
-4. The system service code is ready, just needs AOSP to build
+1. Mount volume if needed: `hdiutil attach ~/aosp.sparseimage`
+2. Apply patches: `~/Code/agi-android-os/tools/build.sh`
+3. Or manually apply and build (see Phase 2 steps above)
 
-## Timeline Estimate
+## File Locations
 
-- AOSP sync: 4-8 hours (background)
-- First build: 2-4 hours
-- Testing & fixes: 1-2 days
-- Driver integration: 1-2 days
-- GSI release: 1 day
+| What | Where |
+|------|-------|
+| AGI-Android OS source | `~/Code/agi-android-os/` |
+| AOSP source | `/Volumes/aosp/` (symlink: `~/aosp`) |
+| Case-sensitive volume | `~/aosp.sparseimage` |
+| Driver source | `~/Code/agi-api-driver/src/agi_driver/` |
+| Sync log | `~/aosp-sync.log` |
