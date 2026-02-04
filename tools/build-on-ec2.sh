@@ -141,12 +141,38 @@ fi
 echo "Output directory: $OUT_DIR"
 
 mkdir -p ~/artifacts
-for img in system.img vbmeta.img boot.img vendor.img userdata.img; do
+
+# Copy emulator images (-qemu.img variants) if available, otherwise regular images
+for img in system vendor ramdisk userdata; do
+    if [ -f "$OUT_DIR/${img}-qemu.img" ]; then
+        echo "Copying ${img}-qemu.img..."
+        cp "$OUT_DIR/${img}-qemu.img" ~/artifacts/
+    elif [ -f "$OUT_DIR/${img}.img" ]; then
+        echo "Copying ${img}.img..."
+        cp "$OUT_DIR/${img}.img" ~/artifacts/
+    fi
+done
+
+# Copy other required images
+for img in vbmeta.img encryptionkey.img kernel-ranchu VerifiedBootParams.textproto; do
     if [ -f "$OUT_DIR/$img" ]; then
         echo "Copying $img..."
         cp "$OUT_DIR/$img" ~/artifacts/
     fi
 done
+
+# Copy SDK/APK artifacts
+if [ -d "$OUT_DIR/system/priv-app/AgentServiceApp" ]; then
+    echo "Copying AgentServiceApp.apk..."
+    mkdir -p ~/artifacts/libs
+    cp "$OUT_DIR/system/priv-app/AgentServiceApp/AgentServiceApp.apk" ~/artifacts/libs/
+fi
+
+if [ -f "$OUT_DIR/obj/JAVA_LIBRARIES/agi-os-aidl_intermediates/classes.jar" ]; then
+    echo "Copying agi-os-aidl.jar..."
+    mkdir -p ~/artifacts/libs
+    cp "$OUT_DIR/obj/JAVA_LIBRARIES/agi-os-aidl_intermediates/classes.jar" ~/artifacts/libs/agi-os-aidl.jar
+fi
 
 echo ""
 echo "=== Build Complete! ==="

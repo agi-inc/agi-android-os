@@ -1,12 +1,12 @@
-# device.mk for AGI-Android OS ARM64 device
+# device.mk for AGI-Android OS ARM64 Emulator
 #
-# This defines the device-level configurations for Apple Silicon Mac emulator
+# This defines the device-level configurations for Android Emulator on Apple Silicon
 
 # IMPORTANT: Set before inherit-product so runtime_libart.mk uses this value
 PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
 
-# Inherit from aosp_arm64 base (simpler than GSI, better for emulator testing)
-$(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_arm64.mk)
+# Inherit from sdk_phone_arm64 base (produces proper emulator images with -qemu.img variants)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/sdk_phone_arm64.mk)
 
 # Clear inherited HOST_PACKAGES that require timezone APEX modules
 PRODUCT_HOST_PACKAGES :=
