@@ -16,6 +16,7 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.os.Bundle
+import android.util.DisplayMetrics
 import android.view.KeyEvent
 import com.agi.os.SessionConfig
 import com.agi.os.display.VirtualDisplayManager
@@ -88,6 +89,8 @@ class Session(
             val displayManager = context.getSystemService(DisplayManager::class.java)
             val primaryDisplay = displayManager.displays[0]
             val mode = primaryDisplay.mode
+            val metrics = DisplayMetrics()
+            primaryDisplay.getMetrics(metrics)
 
             return Session(
                 id = "physical-0",
@@ -95,7 +98,7 @@ class Session(
                 config = SessionConfig(
                     width = mode.physicalWidth,
                     height = mode.physicalHeight,
-                    dpi = primaryDisplay.densityDpi,
+                    dpi = metrics.densityDpi,
                     headless = false
                 ),
                 context = context,

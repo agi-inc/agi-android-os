@@ -2,14 +2,24 @@
 #
 # This builds for x86_64 to avoid cross-compilation dex2oat issues in Modal
 
+# IMPORTANT: Set before inherit-product so runtime_libart.mk uses this value
+# Attempt 20: Skip debug ART APEX (it requires boot-image.prof which fails on eng builds)
+PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
+
 # Inherit from aosp_x86_64 base (avoids cross-compilation)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_x86_64.mk)
 
 # Clear inherited HOST_PACKAGES that require timezone APEX modules
 PRODUCT_HOST_PACKAGES :=
 
-# Attempt 17: Skip debug ART APEX (it requires boot-image.prof generation)
-PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
+# Attempt 22: Enable boot image preopt to generate boot-image.prof for ART APEX
+# The ART APEX requires boot-image.prof which is only generated when boot images are preopted.
+# Setting ENABLE_PREOPT_BOOT_IMAGES=true enables this while keeping WITH_DEXPREOPT=false for apps.
+ENABLE_PREOPT_BOOT_IMAGES := true
+
+# Remove debug ART APEX (we use release APEX instead)
+PRODUCT_PACKAGES := $(filter-out com.android.art.debug,$(PRODUCT_PACKAGES))
+PRODUCT_PACKAGES += com.android.art
 
 # Device name
 PRODUCT_NAME := agi_os_x86_64
@@ -19,8 +29,10 @@ PRODUCT_MODEL := AGI-Android OS
 PRODUCT_MANUFACTURER := AGI
 
 # AGI-specific packages
+# AgentServiceApp - priv-app that hosts the agent service (starts on boot)
+# agi-os-sdk - client SDK library for apps
 PRODUCT_PACKAGES += \
-    AgentSystemService \
+    AgentServiceApp \
     agi-os-sdk
 
 # System properties

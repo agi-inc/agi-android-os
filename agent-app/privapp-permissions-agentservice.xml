@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Privileged permissions whitelist for AGI Agent Service.
+    This file must be in /system/etc/permissions/ for the permissions to be granted.
+-->
+<permissions>
+    <privapp-permissions package="com.agi.os.app">
+        <!-- Required for capturing screen content -->
+        <permission name="android.permission.CAPTURE_VIDEO_OUTPUT" />
+        <permission name="android.permission.CAPTURE_SECURE_VIDEO_OUTPUT" />
+        <permission name="android.permission.READ_FRAME_BUFFER" />
+        <permission name="android.permission.ACCESS_SURFACE_FLINGER" />
+
+        <!-- Required for injecting touch/key events -->
+        <permission name="android.permission.INJECT_EVENTS" />
+
+        <!-- Required for managing virtual displays -->
+        <permission name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+        <!-- Required for cross-user operations -->
+        <permission name="android.permission.MANAGE_USERS" />
+        <permission name="android.permission.INTERACT_ACROSS_USERS" />
+        <permission name="android.permission.INTERACT_ACROSS_USERS_FULL" />
+    </privapp-permissions>
+</permissions>

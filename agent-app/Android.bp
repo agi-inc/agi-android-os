@@ -1,0 +1,50 @@
+// AgentServiceApp - Privileged system app that hosts the AGI Agent Service
+//
+// This app starts on boot and runs the AgentSystemService in the background,
+// providing headless automation capabilities via virtual displays.
+
+android_app {
+    name: "AgentServiceApp",
+
+    srcs: [
+        "src/**/*.kt",
+        // Include session/display/input components directly (excluding AgentSystemService
+        // which requires SystemService from services.core)
+        ":agentservice-core-srcs",
+    ],
+
+    static_libs: [
+        "agi-os-aidl",
+        "kotlinx-coroutines-android",
+    ],
+
+    libs: [
+        "framework",
+        "framework-annotations-lib",
+    ],
+
+    // Platform APIs for system service access
+    platform_apis: true,
+    certificate: "platform",
+    privileged: true,
+
+    // Required for system service registration
+    required: [
+        "privapp-permissions-agentservice.xml",
+    ],
+
+    optimize: {
+        enabled: false,
+    },
+
+    kotlincflags: [
+        "-Xjvm-default=all",
+    ],
+}
+
+// Privileged permissions whitelist
+prebuilt_etc {
+    name: "privapp-permissions-agentservice.xml",
+    src: "privapp-permissions-agentservice.xml",
+    sub_dir: "permissions",
+}

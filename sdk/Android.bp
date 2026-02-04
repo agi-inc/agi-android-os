@@ -15,19 +15,19 @@ android_library {
 }
 
 // AIDL library (shared between service and SDK)
-java_library {
+// Uses android_library to support Kotlin parcelable (SessionConfig.kt)
+android_library {
     name: "agi-os-aidl",
-    srcs: [
-        ":agi-os-aidl-sources",
-    ],
-    sdk_version: "current",
-}
-
-filegroup {
-    name: "agi-os-aidl-sources",
     srcs: [
         "aidl/**/*.aidl",
         "aidl/**/*.kt",
     ],
-    path: "aidl",
+    aidl: {
+        local_include_dirs: ["aidl"],
+    },
+    sdk_version: "current",
+    min_sdk_version: "33",
+    kotlincflags: [
+        "-Xjvm-default=all",
+    ],
 }

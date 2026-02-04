@@ -11,6 +11,7 @@ import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
+import android.util.DisplayMetrics
 import android.util.Slog
 
 class VirtualDisplayManager(context: Context) {
@@ -74,12 +75,14 @@ class VirtualDisplayManager(context: Context) {
     fun listDisplays(): List<DisplayInfo> {
         return displayManager.displays.map { display ->
             val mode = display.mode
+            val metrics = DisplayMetrics()
+            display.getMetrics(metrics)
             DisplayInfo(
                 displayId = display.displayId,
                 name = display.name ?: "Unknown",
                 width = mode.physicalWidth,
                 height = mode.physicalHeight,
-                dpi = display.densityDpi,
+                dpi = metrics.densityDpi,
                 isVirtual = display.displayId != 0
             )
         }

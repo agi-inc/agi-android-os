@@ -1,13 +1,22 @@
 # device.mk for AGI-Android OS ARM64 device
 #
-# This defines the device-level configurations
+# This defines the device-level configurations for Apple Silicon Mac emulator
+
+# IMPORTANT: Set before inherit-product so runtime_libart.mk uses this value
+PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
 
 # Inherit from aosp_arm64 base (simpler than GSI, better for emulator testing)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_arm64.mk)
 
 # Clear inherited HOST_PACKAGES that require timezone APEX modules
-# (these cause build failures in Android 13 due to missing host tools)
 PRODUCT_HOST_PACKAGES :=
+
+# Enable boot image preopt to generate boot-image.prof for ART APEX
+ENABLE_PREOPT_BOOT_IMAGES := true
+
+# Use release ART APEX instead of debug
+PRODUCT_PACKAGES := $(filter-out com.android.art.debug,$(PRODUCT_PACKAGES))
+PRODUCT_PACKAGES += com.android.art
 
 # Device name
 PRODUCT_NAME := agi_os_arm64
@@ -17,8 +26,10 @@ PRODUCT_MODEL := AGI-Android OS
 PRODUCT_MANUFACTURER := AGI
 
 # AGI-specific packages
+# AgentServiceApp - priv-app that hosts the agent service (starts on boot)
+# agi-os-sdk - client SDK library for apps
 PRODUCT_PACKAGES += \
-    AgentSystemService \
+    AgentServiceApp \
     agi-os-sdk
 
 # System properties

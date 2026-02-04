@@ -1,6 +1,22 @@
 // Build configuration for AgentSystemService
 // This service runs in system_server with full system privileges
 
+// Core source files that can be used by both system_server and priv-app
+// Excludes AgentSystemService.kt which requires SystemService from services.core
+filegroup {
+    name: "agentservice-core-srcs",
+    srcs: [
+        "src/com/agi/os/display/VirtualDisplayManager.kt",
+        "src/com/agi/os/input/InputInjector.kt",
+        "src/com/agi/os/screen/ScreenCapturer.kt",
+        "src/com/agi/os/session/Session.kt",
+        "src/com/agi/os/session/SessionManager.kt",
+        "src/com/agi/os/session/SystemExecutor.kt",
+        "src/com/agi/os/service/SessionBinder.kt",
+    ],
+}
+
+// Full library for system_server integration (includes AgentSystemService)
 android_library {
     name: "services.agent",
     srcs: [

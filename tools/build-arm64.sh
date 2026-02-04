@@ -1,8 +1,8 @@
 #!/bin/bash
-# Build AGI-Android OS on EC2 instance
+# Build AGI-Android OS ARM64 for Apple Silicon Mac emulator
 #
-# Run this script on the EC2 instance after setup completes:
-#   nohup ./build-on-ec2.sh > build.log 2>&1 &
+# Run this script on the EC2 instance:
+#   nohup ./build-arm64.sh > build.log 2>&1 &
 #
 # Monitor progress:
 #   tail -f build.log
@@ -10,10 +10,10 @@
 set -e
 
 AOSP_BRANCH="android-13.0.0_r83"
-TARGET="${TARGET:-agi_os_x86_64-eng}"
+TARGET="agi_os_arm64-eng"
 AOSP_DIR="/aosp"
 
-echo "=== AGI-Android OS Build Script ==="
+echo "=== AGI-Android OS ARM64 Build Script ==="
 echo "Target: $TARGET"
 echo "AOSP Branch: $AOSP_BRANCH"
 echo "Started: $(date)"
@@ -110,12 +110,6 @@ echo "Build started at $(date)"
 source build/envsetup.sh
 lunch $TARGET
 
-# Configure for eng build
-export WITH_DEXPREOPT=false
-export DONT_DEXPREOPT_PREBUILTS=true
-export ART_BUILD_HOST_DEBUG=false
-export SKIP_BOOT_JARS_CHECK=true
-
 # Enable ccache
 export USE_CCACHE=1
 export CCACHE_DIR=/ccache
@@ -131,27 +125,48 @@ df -h /aosp
 # Phase 5: Collect artifacts
 echo "=== Phase 5: Collecting Artifacts ==="
 
-OUT_DIR=$(find out/target/product -maxdepth 1 -type d -name "agi_*" | head -1)
+OUT_DIR="out/target/product/agi_arm64"
 
-if [ -z "$OUT_DIR" ]; then
-    echo "ERROR: No output directory found"
+if [ ! -d "$OUT_DIR" ]; then
+    echo "ERROR: Output directory not found: $OUT_DIR"
     exit 1
 fi
 
 echo "Output directory: $OUT_DIR"
 
-mkdir -p ~/artifacts
-for img in system.img vbmeta.img boot.img vendor.img userdata.img; do
+mkdir -p ~/artifacts/libs
+
+# Copy system images
+for img in system.img system-qemu.img vbmeta.img boot.img vendor.img vendor-qemu.img userdata.img ramdisk-qemu.img encryptionkey.img kernel-ranchu; do
     if [ -f "$OUT_DIR/$img" ]; then
         echo "Copying $img..."
         cp "$OUT_DIR/$img" ~/artifacts/
     fi
 done
 
+# Copy AGI component JARs
+for jar in agi-os-aidl agi-os-sdk; do
+    jarpath=$(find out -name "${jar}.jar" -path "*intermediates*" | head -1)
+    if [ -n "$jarpath" ]; then
+        echo "Copying ${jar}.jar..."
+        cp "$jarpath" ~/artifacts/libs/
+    fi
+done
+
+# Copy AgentServiceApp APK
+apkpath=$(find "$OUT_DIR" -name "AgentServiceApp.apk" | head -1)
+if [ -n "$apkpath" ]; then
+    echo "Copying AgentServiceApp.apk..."
+    cp "$apkpath" ~/artifacts/libs/
+fi
+
 echo ""
 echo "=== Build Complete! ==="
 echo "Artifacts in ~/artifacts/:"
 ls -lh ~/artifacts/
 echo ""
+echo "Libraries:"
+ls -lh ~/artifacts/libs/ 2>/dev/null || echo "  (none)"
+echo ""
 echo "To download artifacts to local machine:"
-echo "  scp -i ~/.ssh/aosp-builder.pem ubuntu@<IP>:~/artifacts/* ./"
+echo "  rsync -avz --progress -e 'ssh -i ~/.ssh/aosp-builder.pem' ubuntu@<IP>:~/artifacts/ ./artifacts/"

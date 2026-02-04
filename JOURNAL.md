@@ -771,3 +771,165 @@ ssh -i ~/.ssh/aosp-builder.pem ubuntu@54.198.180.46 'tail -50 ~/build.log'
 ```bash
 aws ec2 terminate-instances --profile sso --instance-ids i-013d90824631c92bd
 ```
+
+---
+
+### 2026-01-30 ~19:20 UTC - EC2 Build: Main Ninja Phase Started
+
+**Milestone:** 🎉 Passed where Modal builds always failed!
+
+**Timeline:**
+- 18:22 UTC: Build script started
+- 18:36 UTC: AOSP sync complete (108GB), AGI components applied
+- 18:36 UTC: First build attempt failed (`source: not found` - dash shell issue)
+- 19:14 UTC: Resumed build with fixed `continue-build.sh` (POSIX-compatible)
+- 19:18 UTC: **Main ninja build started** - 152,718 targets!
+
+**Current Status:**
+- Progress: ~1,700/152,718 targets (1%)
+- Output: `out/target/product/agi_x86_64/`
+- Building: Kernel modules, vendor libraries, hyphenation data
+
+**Critical Test Ahead:**
+Modal builds crashed at ~3% during ART APEX `boot-image.prof` generation due to TLS incompatibility with dex2oat. If EC2 gets past this point, we'll confirm the build environment is correct.
+
+**Next poll:** Continue monitoring every 30 minutes
+
+---
+
+### 2026-01-30 ~20:45 UTC - EC2 Build: Attempt 26 SUCCESS!
+
+**Root Cause Found:** BoardConfig.mk had `WITH_DEXPREOPT := false` from earlier Modal debugging attempts, which disabled boot image preopt. The ART APEX requires boot-image.prof which is only generated when `DisablePreoptBootImages=false`.
+
+**Fix Applied (Attempt 26):**
+```makefile
+# BoardConfig.mk
+WITH_DEXPREOPT := true
+WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY := true
+```
+
+**Build Now Progressing:**
+- dexpreopt.config: `DisablePreopt: false`, `DisablePreoptBootImages: false`
+- Progress: 6% (10,235/152,742) and climbing
+- Passed critical 3% boot-image.prof generation point ✅
+
+**Attempts Summary (Builds 20-26):**
+| Attempt | Change | Result |
+|---------|--------|--------|
+| 20 | Set `PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD=false` before inherit-product | Failed - var evaluated too late |
+| 21 | Filter out `com.android.art.debug` from PRODUCT_PACKAGES | Failed - release APEX also needs profile |
+| 22 | Set `ENABLE_PREOPT_BOOT_IMAGES=true` in product.mk | Failed - variable not picked up |
+| 23 | Pass `WITH_DEXPREOPT=true` to `m` command | Failed - not passed to make |
+| 24 | Pass vars directly to `m` command line | Failed - still not picked up |
+| 25 | Set env vars before envsetup.sh | Failed - BoardConfig.mk overriding |
+| 26 | **Fixed BoardConfig.mk: `WITH_DEXPREOPT := true`** | ✅ SUCCESS |
+
+**Estimated completion:** 4-6 more hours (~152K targets at ~16 cores)
+
+---
+
+### 2026-01-30 22:44 UTC - 🎉 BUILD COMPLETE! 🎉
+
+**AGI-Android OS x86_64 eng build SUCCEEDED after 26 attempts!**
+
+```
+#### build completed successfully (01:58:22 (hh:mm:ss)) ####
+```
+
+**Build Stats:**
+- Total targets: 152,742
+- Build time: 1h 58m 22s
+- Instance: EC2 m6i.4xlarge (16 vCPU, 64GB RAM)
+- Disk used: ~200GB of 600GB
+
+**Artifacts in `~/artifacts/` on EC2:**
+| Image | Size |
+|-------|------|
+| system.img | 1.1GB |
+| vendor.img | 161MB |
+| userdata.img | 550MB |
+| vbmeta.img | 8.0K |
+
+**Key Fixes:**
+1. Switched from Modal to EC2 (Modal TLS incompatibility with dex2oat)
+2. Fixed BoardConfig.mk to enable dexpreopt for boot images (`WITH_DEXPREOPT := true`)
+3. Used `WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY := true` to speed up eng builds
+
+**Next Steps:**
+1. Download artifacts: `scp -i ~/.ssh/aosp-builder.pem ubuntu@54.198.180.46:~/artifacts/* ./`
+2. Test in Android Emulator
+3. Verify AgentSystemService is running
+4. Terminate EC2: `aws ec2 terminate-instances --profile sso --instance-ids i-013d90824631c92bd`
+
+**Cost:** ~$1.50 (2 hours × $0.768/hour)
+
+---
+
+### 2026-01-30 ~23:28 UTC - AGI Component Build Fixes
+
+**Issue Found:** AGI components (services.agent, agi-os-sdk) were not included in the original build due to several issues:
+
+1. **Module name mismatch:** Device config referenced `AgentSystemService` but module is named `services.agent`
+2. **AIDL directory structure:** AIDL files needed to be under `sdk/aidl/` with proper include paths
+3. **Kotlin in java_library:** Changed `agi-os-aidl` from `java_library` to `android_library` for Kotlin support
+4. **Missing Display API:** Fixed `densityDpi` references to use `DisplayMetrics`
+
+**Fixes Applied:**
+
+1. Updated `aosp/device/agi/agi_x86_64/agi_os_x86_64.mk`:
+   - Changed `AgentSystemService` → `services.agent`
+
+2. Updated `sdk/Android.bp`:
+   - Changed `java_library` → `android_library` for agi-os-aidl
+   - Added `aidl.local_include_dirs: ["aidl"]`
+
+3. Fixed `system-service/src/com/agi/os/display/VirtualDisplayManager.kt`:
+   - Added `DisplayMetrics` import
+   - Changed `display.densityDpi` → `metrics.densityDpi`
+
+4. Fixed `system-service/src/com/agi/os/session/Session.kt`:
+   - Same DisplayMetrics fix
+
+**Build Status:**
+- ✅ `agi-os-aidl` builds successfully (1.6MB)
+- ✅ `agi-os-sdk` builds successfully (1.6MB)
+- ✅ `services.agent` builds successfully (3.2MB)
+- ✅ Full incremental rebuild completed (~01:10 UTC, ~1h 40m)
+
+**Updated Artifacts in `~/artifacts2/` on EC2:**
+| File | Size |
+|------|------|
+| system.img | 1.0GB |
+| system-qemu.img | 8.0GB |
+| vendor.img | 161MB |
+| userdata.img | 550MB |
+| kernel-ranchu | 22MB |
+| ramdisk-qemu.img | 1.7MB |
+| vbmeta.img | 8KB |
+| services.agent.jar | 3.2MB |
+| agi-os-sdk.jar | 1.6MB |
+| agi-os-aidl.jar | 1.6MB |
+
+**Architecture Note:**
+The AGI components are currently built as `android_library` modules:
+- `services.agent` - System service code (not yet integrated into SystemServer)
+- `agi-os-sdk` - Client SDK (can be used by apps as dependency)
+
+For full integration, `services.agent` needs to be either:
+1. Converted to a privileged app (priv-app) that hosts the service
+2. Or linked into AOSP's SystemServer (requires patching SystemServer.java)
+
+**Next Integration Steps:**
+1. Create `AgentApp` priv-app that:
+   - Hosts `AgentSystemService`
+   - Starts on boot via BOOT_COMPLETED receiver
+   - Registers service with ServiceManager
+2. Add `AgentApp` to PRODUCT_PACKAGES
+3. Rebuild and test
+
+**Emulator Testing Note:**
+The x86_64 build cannot run on M-series Macs (ARM64) without hardware translation.
+Options for testing:
+1. Run emulator on the EC2 instance (requires KVM - bare metal instance)
+2. Rebuild for ARM64 target for local Mac testing
+3. Use a remote Android device or cloud-based testing service
