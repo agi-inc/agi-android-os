@@ -6,7 +6,7 @@
     <!-- System-level permissions for agent automation -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.CAPTURE_VIDEO_OUTPUT" />
     <uses-permission android:name="android.permission.CAPTURE_SECURE_VIDEO_OUTPUT" />
@@ -27,7 +27,7 @@
             android:name=".AgentHostService"
             android:enabled="true"
             android:exported="true"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="mediaProjection">
             <intent-filter>
                 <action android:name="com.agi.os.AGENT_SERVICE" />
             </intent-filter>
