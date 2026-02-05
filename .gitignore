@@ -1,2 +1,4 @@
 __pycache__/
 artifacts/
+artifacts-arm64-emu/
+artifacts-arm64/

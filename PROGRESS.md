@@ -2,25 +2,29 @@
 
 This document tracks the implementation progress of AGI-Android OS.
 
-## Current Status: Build Environment Issue
+## Current Status: BUILD COMPLETE ✅
 
-**AOSP source synced (104GB). macOS SDK 26.1 (Sequoia) is incompatible with AOSP Android 13.**
+**ARM64 emulator build completed successfully. Ready for testing on real device.**
 
-### macOS Build Issue
+### Build Artifacts
 
-AOSP Android 13's build system doesn't support macOS SDK 26.1 (`_Float16` type errors in math.h).
+Located at `artifacts-arm64-emu/`:
+| File | Size | Purpose |
+|------|------|---------|
+| system-qemu.img | 8.1 GB | Main system image (QEMU format) |
+| vendor-qemu.img | 141 MB | Vendor HAL |
+| ramdisk.img | 1.6 MB | Initial ramdisk |
+| userdata.img | 550 MB | User data partition |
+| kernel-ranchu | 21 MB | Emulator kernel |
+| AgentServiceApp.apk | 3.4 MB | Privileged service app |
+| agi-os-aidl.jar | 1.6 MB | AIDL interfaces |
 
-**Solution: Use Docker build** (recommended):
-```bash
-# Build using Docker (Linux environment)
-./tools/docker-build.sh
+### Validated Components
 
-# Or use a cloud build service / Linux VM
-```
-
-**Alternative: Install older macOS SDK**
-- Download macOS SDK 11 or 12 from Apple Developer
-- Set `SDKROOT` environment variable
+- ✅ AgentServiceApp in `/system/priv-app/`
+- ✅ `ro.agi.version=1.0.0` in build.prop
+- ✅ `ro.agi.sdk.version=1` in build.prop
+- ✅ Emulator-format images (QEMU/GPT disk format)
 
 ### Completed ✅
 
@@ -94,32 +98,30 @@ AOSP Android 13's build system doesn't support macOS SDK 26.1 (`_Float16` type e
 
 ### Next Steps 📋
 
-#### Phase 2: Build & Test (READY TO START)
+#### Phase 2: Testing (READY)
+
+**Option A: Real ARM64 Device (Recommended)**
 ```bash
-# Apply AGI-Android OS to AOSP
-cd ~/Code/agi-android-os
-./tools/build.sh
-
-# Or manually:
-cd ~/aosp
-cp -r ~/Code/agi-android-os/aosp/device/agi device/
-cp -r ~/Code/agi-android-os/system-service packages/services/AgentService
-cp -r ~/Code/agi-android-os/sdk frameworks/AgentSDK
-cp -r ~/Code/agi-android-os/aidl/com/agi frameworks/base/core/java/com/
-cd frameworks/base && git apply ~/Code/agi-android-os/aosp/patches/frameworks_base/*.patch
-
-# Build for emulator first
-source build/envsetup.sh
-lunch agi_os_x86_64-userdebug
-m -j$(sysctl -n hw.ncpu)
+# Flash to Pixel 4+ or other Treble device
+# See docs/flashing.md
 ```
 
-- [ ] Apply patches to AOSP source
-- [ ] Build x86_64 for emulator testing
-- [ ] Test AgentSystemService startup
-- [ ] Verify virtual display creation
-- [ ] Test input injection
-- [ ] Test screenshot capture
+**Option B: EC2 with KVM (Fast but costly)**
+```bash
+# Launch bare-metal EC2 instance (~$5/hr)
+# Run x86_64 emulator with KVM acceleration
+```
+
+**Option C: Wait for slow ARM64 emulator**
+- ARM64 on macOS without HVF takes 5-10 min to boot
+
+Testing checklist:
+- [ ] Verify AgentHostService starts on boot
+- [ ] Test headless session creation
+- [ ] Verify app launches on virtual display (not visible on screen)
+- [ ] Test screenshot capture from virtual display
+- [ ] Test input injection to virtual display
+- [ ] Test multiple concurrent sessions
 
 #### Phase 3: Driver Integration
 - [ ] Add `linux-arm64` target to driver build workflow in `agi-api-driver`

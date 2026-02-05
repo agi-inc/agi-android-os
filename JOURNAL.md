@@ -933,3 +933,241 @@ Options for testing:
 1. Run emulator on the EC2 instance (requires KVM - bare metal instance)
 2. Rebuild for ARM64 target for local Mac testing
 3. Use a remote Android device or cloud-based testing service
+
+---
+
+## Session: 2026-02-03/04
+
+### Goal: ARM64 Build for Apple Silicon Mac + Background Agent Service
+
+**Objective:** Create an ARM64 build that runs natively on Apple Silicon Macs, with the agent service running in the background for headless automation.
+
+### ~22:00 UTC - Created AgentServiceApp Priv-App
+
+Created a privileged system app to host the agent service:
+
+**New Files:**
+- `agent-app/Android.bp` - Build configuration
+- `agent-app/AndroidManifest.xml` - App manifest with boot receiver
+- `agent-app/privapp-permissions-agentservice.xml` - Permission whitelist
+- `agent-app/src/com/agi/os/app/BootReceiver.kt` - Starts service on boot
+- `agent-app/src/com/agi/os/app/AgentHostService.kt` - Hosts the agent service
+
+**Architecture:**
+```
+BootReceiver (BOOT_COMPLETED)
+    └── AgentHostService (Foreground Service)
+            └── SessionManager
+                    ├── VirtualDisplayManager (headless displays)
+                    ├── InputInjector (touch/key events)
+                    ├── ScreenCapturer (screenshots)
+                    └── SystemExecutor (shell commands)
+```
+
+**Key Changes:**
+1. Updated ARM64 device config with dexpreopt fixes from x86_64 build
+2. Created `agentservice-core-srcs` filegroup to share code between system_server and priv-app
+3. Updated build scripts to include agent-app in AOSP tree
+
+### ~03:00 UTC - ARM64 Build Started on EC2
+
+**EC2 Instance:** i-0b63668c80cfffbf5 (100.31.59.82)
+- Type: m6i.4xlarge (16 vCPU, 64GB RAM)
+- Storage: 600GB gp3
+
+**Build Progress:**
+- Phase 1: AOSP sync (~2 hours) ✅
+- Phase 2: Apply AGI components ✅
+- Phase 3: Ninja build - Failed at 90%
+
+### ~04:38 UTC - Build Error: Android 13 Manifest Incompatibility
+
+**Error:**
+```
+'specialUse' is incompatible with attribute foregroundServiceType
+```
+
+**Root Cause:** `foregroundServiceType="specialUse"` was added in Android 14 (API 34), but we're targeting Android 13 (API 33).
+
+**Fix:** Changed to `foregroundServiceType="mediaProjection"` which is valid for Android 13 and appropriate for screen capture operations.
+
+### ~06:43 UTC - ARM64 Build Complete!
+
+After fixing the manifest and rebuilding:
+
+```
+#### build completed successfully (05:43 (mm:ss)) ####
+```
+
+**Artifacts Downloaded to `artifacts-arm64/`:**
+
+| File | Size | Purpose |
+|------|------|---------|
+| system.img | 1.4 GB | Main system image with AGI components |
+| vendor.img | 113 MB | Vendor HAL image |
+| cache.img | 16 MB | Cache partition |
+| ramdisk.img | 1.3 MB | Initial ramdisk |
+| vbmeta.img | 4 KB | Verified boot metadata |
+| AgentServiceApp.apk | 3.3 MB | Privileged agent service app |
+| agi-os-aidl.jar | 16 KB | AIDL interface definitions |
+
+**EC2 Instance:** Terminated after artifact download
+
+### Build Attempts Summary
+
+| Attempt | Target | Issue | Resolution |
+|---------|--------|-------|------------|
+| 1-19 | x86_64/ARM64 | Modal TLS incompatibility | Switched to EC2 |
+| 20-26 | x86_64 | dexpreopt config | Fixed BoardConfig.mk |
+| 27 | ARM64 | foregroundServiceType | Changed to mediaProjection |
+| 28 | ARM64 | ✅ SUCCESS | - |
+
+### What's Included in ARM64 Build
+
+1. **Android 13 (API 33)** - Base AOSP android-13.0.0_r83
+2. **AgentServiceApp** - Privileged system app that:
+   - Starts automatically on boot via `BootReceiver`
+   - Runs as foreground service with `mediaProjection` type
+   - Creates virtual displays for headless sessions
+   - Provides screen capture and input injection
+   - Registers with ServiceManager as "agent" service
+3. **AGI-OS SDK** - Client library for apps to connect to agent service
+
+### Next Steps
+
+1. [x] Create ARM64 build for Apple Silicon Mac
+2. [x] Create AgentServiceApp priv-app
+3. [x] Download artifacts locally
+4. [ ] Test in Android Emulator on Mac
+5. [ ] Verify AgentServiceApp starts on boot
+6. [ ] Test headless session creation
+7. [ ] Test screen capture and input injection
+
+---
+
+## Session: 2026-02-04
+
+### Goal: Get ARM64 Emulator Build Running on macOS
+
+**Problem:** Previous ARM64 build produced GSI images (for real devices), not emulator images. The Android Emulator requires QEMU-formatted disk images (`-qemu.img` variants).
+
+### Phase 1: Diagnosis
+
+Attempted to run previous ARM64 build in emulator:
+- Emulator launched but device stayed "offline"
+- Root cause: `system.img` was raw ext4, not QEMU disk image
+- x86_64 emulator not supported on Apple Silicon (aarch64 host)
+
+**Image Format Comparison:**
+| Format | x86_64 (working) | ARM64 (broken) |
+|--------|-----------------|----------------|
+| system.img | GPT disk (8GB) | Raw ext4 (1.4GB) |
+| Produces `-qemu.img` | Yes | No |
+
+### Phase 2: Fix Build Configuration
+
+Changed ARM64 build to inherit from emulator target:
+
+**agi_os_arm64.mk:**
+```makefile
+# Before (GSI target):
+$(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_arm64.mk)
+
+# After (emulator target):
+$(call inherit-product, $(SRC_TARGET_DIR)/product/sdk_phone_arm64.mk)
+```
+
+**BoardConfig.mk:**
+```makefile
+# Before:
+include build/make/target/board/generic_arm64/BoardConfig.mk
+
+# After (based on goldfish/emulator64_arm64):
+TARGET_ARCH := arm64
+TARGET_ARCH_VARIANT := armv8-a
+TARGET_CPU_VARIANT := generic
+TARGET_CPU_ABI := arm64-v8a
+include build/make/target/board/BoardConfigGsiCommon.mk
+include build/make/target/board/BoardConfigEmuCommon.mk
+```
+
+Commits:
+- `86303f1` - feat(build): switch ARM64 target from GSI to emulator
+- `c57d556` - fix(build): correct ARM64 emulator BoardConfig includes
+
+### Phase 3: EC2 Build
+
+**EC2 Instance:** i-0535061f24cd09768 (m6i.4xlarge, 64GB RAM)
+**IP:** 44.213.119.206
+**Cost:** ~$2.50 (3 hours)
+
+Build timeline:
+- 22:47 UTC - Started AOSP sync
+- 23:04 UTC - Sync complete, build started
+- 23:04 UTC - First build error (wrong goldfish includes)
+- 23:33 UTC - Fixed BoardConfig, restarted build
+- 01:35 UTC - **BUILD COMPLETE** (2 hours)
+
+### Phase 4: Artifacts
+
+Downloaded 9GB to local machine:
+
+```
+artifacts-arm64-emu/
+├── system-qemu.img      8.1 GB   ← QEMU disk image (GPT format)
+├── vendor-qemu.img      141 MB
+├── system_ext-qemu.img  159 MB
+├── ramdisk.img          1.6 MB
+├── userdata.img         550 MB
+├── kernel-ranchu        21 MB
+├── vbmeta.img           8 KB
+├── encryptionkey.img    18 MB
+├── cache.img            16 MB
+├── VerifiedBootParams.textproto
+└── libs/
+    ├── AgentServiceApp.apk  3.4 MB
+    └── agi-os-aidl.jar      1.6 MB
+```
+
+### Phase 5: Emulator Testing
+
+**Problem:** ARM64 emulator on macOS Apple Silicon lacks HVF acceleration.
+
+```
+WARNING | hvf is not enabled on this aarch64 host.
+```
+
+Without hardware virtualization, ARM64 emulation is ~10x slower. Device stayed "offline" after 3+ minutes.
+
+**Attempted workarounds:**
+1. x86_64 emulator → "CPU Architecture 'x86_64' is not supported by QEMU2 emulator on aarch64 host"
+2. EC2 with KVM → Standard EC2 instances don't have KVM (need bare-metal)
+3. Headless mode → Same speed issue
+
+### Build Validation (on EC2)
+
+Confirmed AGI components are properly integrated:
+
+```
+✅ system-qemu.img (8.1GB) - Emulator format
+✅ AgentServiceApp.apk in /system/priv-app/
+✅ ro.agi.version=1.0.0
+✅ ro.agi.sdk.version=1
+✅ persist.agi.debug=false
+```
+
+### Outcome
+
+**Build: SUCCESS** - Proper emulator images with AGI components
+**Testing: BLOCKED** - macOS ARM64 emulator too slow without HVF
+
+### Testing Options
+
+1. **Real ARM64 device** - Flash GSI to Pixel 4+ (recommended)
+2. **EC2 bare-metal** - m5.metal or similar with KVM (~$5/hr)
+3. **Wait for slow emulator** - 5-10 min boot time on macOS
+
+### EC2 Terminated
+
+Instance i-0535061f24cd09768 terminated to stop costs.
+
